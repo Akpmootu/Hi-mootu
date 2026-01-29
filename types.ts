@@ -15,7 +15,11 @@ export interface NewsArticle {
 export interface MarketForecast {
   recommendation: 'BUY' | 'SELL' | 'HOLD';
   confidence: number;
-  reason: string;
+  reason: string; // Main summary
+  factors?: string[]; // New: List of key driving factors (e.g., "Fed Rate Cut", "War in Middle East")
+  strategy?: string; // New: Actionable advice (e.g., "Wait for pullback to 2600")
+  support?: string; // New: Estimated Support Level
+  resistance?: string; // New: Estimated Resistance Level
   targetPrice: string; // Keep for backward compatibility (USD)
   targetPriceTHB?: string; // New: Thai Baht Target
   timestamp: number;

@@ -49,24 +49,49 @@ export const summarizeNews = async (content: string): Promise<string> => {
   }
 };
 
-export const analyzeMarket = async (headlines: string[], assetType: 'GOLD' | 'STOCK', symbol?: string): Promise<MarketForecast> => {
+export const analyzeMarket = async (headlines: string[], assetType: 'GOLD' | 'STOCK', symbol?: string, currentPriceTHB?: string): Promise<MarketForecast> => {
   const context = assetType === 'GOLD' 
-    ? 'ราคาทองคำ (XAUUSD) และราคาทองคำแท่งไทย' 
+    ? 'ราคาทองคำโลก (XAUUSD) และราคาทองคำแท่งไทย (96.5%)' 
     : `หุ้น ${symbol} (ตลาดสหรัฐฯ)`;
 
-  const prompt = `
-    คุณคือนักวิเคราะห์การลงทุนอัจฉริยะ "Hi'Mootu"
-    วิเคราะห์แนวโน้ม: ${context}
-    จากหัวข้อข่าวล่าสุด: ${headlines.join(" | ").substring(0, 2000)}
+  // Logic to guide AI on Support/Resistance based on Real-time price
+  let priceGuidance = "";
+  if (assetType === 'GOLD' && currentPriceTHB) {
+      priceGuidance = `
+      *** ข้อมูลสำคัญมาก (CRITICAL) ***
+      ราคาซื้อขายจริงทองคำแท่งไทย (96.5%) ณ ขณะนี้คือ: ${currentPriceTHB} บาท
+      
+      หน้าที่ของคุณคือคำนวณ "แนวรับ" (Support) และ "แนวต้าน" (Resistance) โดยอ้างอิงจากราคา ${currentPriceTHB} เท่านั้น!
+      - แนวรับ (Support): ควรต่ำกว่าราคาปัจจุบันประมาณ 50-300 บาท (เช่น ถ้าปัจจุบัน 42000, แนวรับอาจเป็น 41850)
+      - แนวต้าน (Resistance): ควรสูงกว่าราคาปัจจุบันประมาณ 50-300 บาท (เช่น ถ้าปัจจุบัน 42000, แนวต้านอาจเป็น 42200)
+      - Target Price THB: ควรเป็นราคาเป้าหมายที่สมเหตุสมผลใกล้เคียงกับ ${currentPriceTHB}
+      ห้ามใช้ข้อมูลเก่าในความทรงจำ ให้ใช้ราคา ${currentPriceTHB} เป็นฐานในการคำนวณเดี๋ยวนี้
+      `;
+  }
 
-    **คำสั่งสำคัญ**: ตอบกลับเป็น JSON เท่านั้น โดยใช้โครงสร้างนี้:
+  const prompt = `
+    คุณคือนักวิเคราะห์การลงทุนระดับโลก "Hi'Mootu" (Senior Market Analyst)
+    หน้าที่ของคุณ: วิเคราะห์แนวโน้ม ${context} เพื่อช่วยนักลงทุนตัดสินใจซื้อขายได้ทันที
+    
+    ${priceGuidance}
+
+    ข้อมูลข่าวล่าสุด: 
+    ${headlines.join(" | ").substring(0, 2500)}
+
+    **คำสั่งสำคัญ**: ตอบกลับเป็น JSON เท่านั้น (ห้ามมี Markdown) โดยใช้โครงสร้างนี้:
     {
       "recommendation": "BUY" หรือ "SELL" หรือ "HOLD",
       "confidence": (ตัวเลข 0-100),
-      "reason": "เหตุผลสั้นๆ 1 ประโยค ภาษาไทย (กระชับ ได้ใจความ)",
-      "targetPrice": "ราคาเป้าหมาย USD (เช่น $2,750)",
-      "targetPriceTHB": "ราคาเป้าหมายทองคำแท่งไทย (เช่น 44,500 บาท) ถ้าเป็นหุ้นให้ใส่ - "
+      "reason": "สรุปสถานการณ์ภาพรวม 2-3 บรรทัด (ภาษาไทย) เน้นสิ่งที่กำลังเกิดขึ้นเดี๋ยวนี้",
+      "factors": ["ปัจจัยบวก/ลบ 1 (สั้นๆ)", "ปัจจัย 2", "ปัจจัย 3"],
+      "strategy": "กลยุทธ์การเทรดที่แนะนำ (เช่น 'รอจังหวะย่อซื้อที่แนวรับ' หรือ 'ทยอยขายทำกำไร')",
+      "support": "ราคาแนวรับ (ใส่หน่วย บาท ถ้าเป็นทองไทย)",
+      "resistance": "ราคาแนวต้าน (ใส่หน่วย บาท ถ้าเป็นทองไทย)",
+      "targetPrice": "ราคาเป้าหมาย Spot (เช่น $2,750)",
+      "targetPriceTHB": "ราคาเป้าหมายทองคำแท่งไทย (ใส่หน่วย บาท)"
     }
+
+    Tip: ถ้าข่าวมีเรื่องสงคราม/เงินเฟ้อ ให้มองเป็นปัจจัยบวกต่อทอง, ถ้าข่าวเศรษฐกิจสหรัฐฯ ดี/ดอกเบี้ยขึ้น ให้มองเป็นลบ
   `;
 
   try {
@@ -94,6 +119,10 @@ export const analyzeMarket = async (headlines: string[], assetType: 'GOLD' | 'ST
       recommendation: rec as any,
       confidence: json.confidence || 50,
       reason: json.reason || "ตลาดมีความผันผวน ควรติดตามข่าวสารอย่างใกล้ชิด",
+      factors: json.factors || [],
+      strategy: json.strategy || "ติดตามสถานการณ์อย่างใกล้ชิด",
+      support: json.support || "-",
+      resistance: json.resistance || "-",
       targetPrice: json.targetPrice || "N/A",
       targetPriceTHB: json.targetPriceTHB || "-",
       timestamp: Date.now()
@@ -103,7 +132,7 @@ export const analyzeMarket = async (headlines: string[], assetType: 'GOLD' | 'ST
     return {
       recommendation: "HOLD",
       confidence: 50,
-      reason: "กำลังประมวลผลข้อมูลตลาด (AI Busy)...",
+      reason: "กำลังประมวลผลข้อมูลตลาดเชิงลึก (AI Busy)...",
       targetPrice: "-",
       targetPriceTHB: "-",
       timestamp: Date.now()
