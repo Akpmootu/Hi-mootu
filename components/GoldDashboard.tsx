@@ -10,31 +10,25 @@ interface Props {
   news: NewsArticle[];
 }
 
-// New Interface based on api.chnwt.dev/thai-gold-api structure
-interface GoldPriceDetail {
-  buy: string;
-  sell: string;
+// New Interface for thaigold.info data structure
+interface ThaiGoldItem {
+  name: string;
+  bid: string | number;
+  ask: string | number;
+  diff: string | number;
 }
 
-interface GoldApiResponse {
-  status: string;
-  response: {
-    date: string;
-    update_time: string;
-    price: {
-      gold: GoldPriceDetail;      // ทองรูปพรรณ
-      gold_bar: GoldPriceDetail;  // ทองคำแท่ง
-      change: {
-        compare_previous: string;
-        compare_yesterday: string;
-      };
-    };
-  };
+// Normalized State for UI
+interface GoldDataState {
+  bar: { buy: string; sell: string };
+  jewelry: { buy: string; sell: string };
+  change: string;
+  updateTime: Date;
 }
 
 const GoldDashboard: React.FC<Props> = ({ headlines, news }) => {
   // Real Data State
-  const [goldData, setGoldData] = useState<GoldApiResponse | null>(null);
+  const [goldData, setGoldData] = useState<GoldDataState | null>(null);
   const [loadingGold, setLoadingGold] = useState(true);
   const [goldError, setGoldError] = useState(false);
   const [usingProxy, setUsingProxy] = useState(false);
@@ -57,25 +51,28 @@ const GoldDashboard: React.FC<Props> = ({ headlines, news }) => {
     return () => clearInterval(timer);
   }, []);
 
-  // 2. Fetch Real Thai Gold Price (Robust Multi-Source Strategy)
+  // 2. Fetch Real Thai Gold Price (Updated Source: thaigold.info)
   const fetchThaiGoldPrice = async () => {
     // Silent update if data exists, loading spinner only on first load
     if (!goldData) setLoadingGold(true);
     setGoldError(false);
     
+    // Target URL
+    const targetUrl = 'https://www.thaigold.info/RealTimeDataV2/gtdata_.json';
+
     // Strategy: Priority on Proxies because Browser fetch enforces CORS
     const strategies = [
       { 
-        name: 'AllOrigins Proxy', 
-        url: 'https://api.allorigins.win/raw?url=' + encodeURIComponent('https://api.chnwt.dev/thai-gold-api/latest') 
+        name: 'CorsProxy.io', 
+        url: 'https://corsproxy.io/?' + encodeURIComponent(targetUrl) 
       },
       { 
-        name: 'CorsProxy.io', 
-        url: 'https://corsproxy.io/?' + encodeURIComponent('https://api.chnwt.dev/thai-gold-api/latest') 
+        name: 'AllOrigins Proxy', 
+        url: 'https://api.allorigins.win/raw?url=' + encodeURIComponent(targetUrl) 
       },
       { 
         name: 'Direct API', 
-        url: 'https://api.chnwt.dev/thai-gold-api/latest' 
+        url: targetUrl
       }
     ];
 
@@ -85,18 +82,40 @@ const GoldDashboard: React.FC<Props> = ({ headlines, news }) => {
       try {
         // Add cache busting
         const fetchUrl = `${strategy.url}${strategy.url.includes('?') ? '&' : '?'}t=${Date.now()}`;
-        // console.log(`Fetching Gold Price via ${strategy.name}...`);
         
         const res = await fetch(fetchUrl);
         if (!res.ok) continue; // Try next strategy
         
-        const json: GoldApiResponse = await res.json();
+        const data = await res.json();
         
-        if (json.status === 'success' && json.response) {
-          setGoldData(json);
-          setUsingProxy(strategy.name !== 'Direct API');
-          success = true;
-          break; // Stop loop on success
+        // Parse Logic for thaigold.info (Expected Array)
+        if (Array.isArray(data)) {
+          let barItem = data.find((item: ThaiGoldItem) => item.name.includes('แท่ง'));
+          let jewelryItem = data.find((item: ThaiGoldItem) => item.name.includes('รูปพรรณ'));
+          
+          // Fallback mapping if names vary slightly
+          if (!barItem && data.length > 0) barItem = data[0]; 
+          if (!jewelryItem && data.length > 1) jewelryItem = data[1];
+
+          if (barItem) {
+            const newData: GoldDataState = {
+              bar: {
+                buy: barItem.bid.toString(),
+                sell: barItem.ask.toString()
+              },
+              jewelry: {
+                buy: jewelryItem ? jewelryItem.bid.toString() : '-',
+                sell: jewelryItem ? jewelryItem.ask.toString() : '-'
+              },
+              change: barItem.diff ? barItem.diff.toString() : '0',
+              updateTime: new Date()
+            };
+
+            setGoldData(newData);
+            setUsingProxy(strategy.name !== 'Direct API');
+            success = true;
+            break; // Stop loop on success
+          }
         }
       } catch (error) {
         console.warn(`Strategy ${strategy.name} failed:`, error);
@@ -126,7 +145,7 @@ const GoldDashboard: React.FC<Props> = ({ headlines, news }) => {
       // Need both headlines and goldData (price) to run accurate analysis
       if (headlines.length === 0 || !goldData) return;
       
-      const currentPriceStr = goldData.response.price.gold_bar.sell;
+      const currentPriceStr = goldData.bar.sell;
 
       const cached = localStorage.getItem('gold_forecast_mistral');
       const lastTime = localStorage.getItem('gold_forecast_time_mistral');
@@ -222,21 +241,21 @@ const GoldDashboard: React.FC<Props> = ({ headlines, news }) => {
   // Formatters
   const formatPrice = (price: string | undefined) => {
     if (!price) return "-";
-    // API might return string with comma, we just ensure it looks good
-    return price;
+    // Ensure comma separation for display
+    try {
+      const num = parseFloat(price.replace(/,/g, ''));
+      return isNaN(num) ? price : num.toLocaleString('th-TH');
+    } catch {
+      return price;
+    }
   };
   
   const getChangeColor = (change: string | undefined) => {
     if (!change) return 'bg-slate-200 text-slate-500';
     if (change.includes('-')) return 'bg-red-500 text-white';
-    if (change === '0' || change === '0.00') return 'bg-slate-200 text-slate-500';
+    if (change === '0' || change === '0.00' || change === '0.0') return 'bg-slate-200 text-slate-500';
     return 'bg-green-500 text-white';
   };
-
-  const priceData = goldData?.response.price;
-  const goldBar = priceData?.gold_bar;
-  const goldJewelry = priceData?.gold;
-  const changeValue = priceData?.change.compare_previous || "0";
 
   // Date Formatters for Header
   const formattedDate = currentTime.toLocaleDateString('th-TH', { 
@@ -370,7 +389,7 @@ const GoldDashboard: React.FC<Props> = ({ headlines, news }) => {
         )}
       </div>
 
-      {/* 2. Thai Gold Association Table (Source: chnwt.dev) */}
+      {/* 2. Thai Gold Association Table (Source: thaigold.info) */}
       <div className="bg-white rounded-3xl shadow-soft overflow-hidden border border-slate-100 relative min-h-[200px]">
          {loadingGold && !goldData && (
             <div className="absolute inset-0 bg-white/90 z-20 flex items-center justify-center backdrop-blur-sm">
@@ -429,18 +448,18 @@ const GoldDashboard: React.FC<Props> = ({ headlines, news }) => {
                         <span className="bg-yellow-100 text-yellow-700 w-8 h-8 rounded-full flex items-center justify-center text-sm"><i className="fas fa-bars"></i></span>
                         ทองคำแท่ง
                     </span>
-                    <span className={`text-xs px-2.5 py-1 rounded-full font-bold shadow-sm flex items-center gap-1 ${getChangeColor(changeValue)}`}>
-                      <i className={`fas ${changeValue.includes('-') ? 'fa-caret-down' : changeValue === '0' ? 'fa-minus' : 'fa-caret-up'}`}></i>
-                      {changeValue && !changeValue.includes('-') && changeValue !== '0' ? '+' : ''}{changeValue}
+                    <span className={`text-xs px-2.5 py-1 rounded-full font-bold shadow-sm flex items-center gap-1 ${getChangeColor(goldData?.change)}`}>
+                      <i className={`fas ${goldData?.change.includes('-') ? 'fa-caret-down' : goldData?.change === '0' ? 'fa-minus' : 'fa-caret-up'}`}></i>
+                      {goldData?.change && !goldData?.change.includes('-') && goldData?.change !== '0' ? '+' : ''}{goldData?.change || "0"}
                     </span>
                   </div>
                   <div className="flex justify-between items-end mb-3">
                      <span className="text-slate-500 text-sm font-medium flex items-center gap-1"><i className="fas fa-arrow-down text-green-500"></i> รับซื้อ</span>
-                     <span className="text-2xl font-bold text-[#8B0000] tracking-tight">{formatPrice(goldBar?.buy)}</span>
+                     <span className="text-2xl font-bold text-[#8B0000] tracking-tight">{formatPrice(goldData?.bar.buy)}</span>
                   </div>
                   <div className="flex justify-between items-end">
                      <span className="text-slate-500 text-sm font-medium flex items-center gap-1"><i className="fas fa-arrow-up text-red-500"></i> ขายออก</span>
-                     <span className="text-3xl font-bold text-[#8B0000] tracking-tight">{formatPrice(goldBar?.sell)}</span>
+                     <span className="text-3xl font-bold text-[#8B0000] tracking-tight">{formatPrice(goldData?.bar.sell)}</span>
                   </div>
                </div>
 
@@ -456,11 +475,11 @@ const GoldDashboard: React.FC<Props> = ({ headlines, news }) => {
                   </div>
                   <div className="flex justify-between items-end mb-3">
                      <span className="text-slate-500 text-sm font-medium flex items-center gap-1"><i className="fas fa-file-invoice text-slate-400"></i> ฐานภาษี</span>
-                     <span className="text-2xl font-bold text-[#8B0000] tracking-tight">{formatPrice(goldJewelry?.buy)}</span>
+                     <span className="text-2xl font-bold text-[#8B0000] tracking-tight">{formatPrice(goldData?.jewelry.buy)}</span>
                   </div>
                   <div className="flex justify-between items-end">
                      <span className="text-slate-500 text-sm font-medium flex items-center gap-1"><i className="fas fa-tag text-slate-400"></i> ขายออก</span>
-                     <span className="text-3xl font-bold text-[#8B0000] tracking-tight">{formatPrice(goldJewelry?.sell)}</span>
+                     <span className="text-3xl font-bold text-[#8B0000] tracking-tight">{formatPrice(goldData?.jewelry.sell)}</span>
                   </div>
                </div>
             </div>
