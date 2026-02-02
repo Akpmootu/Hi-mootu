@@ -29,6 +29,17 @@
             },
             boxShadow: {
               'soft': '0 4px 20px -2px rgba(0, 0, 0, 0.05)',
+              'glow': '0 0 15px rgba(197, 160, 89, 0.3)',
+            },
+            animation: {
+              'fade-in': 'fadeIn 0.5s ease-out forwards',
+              'bounce-slow': 'bounce 3s infinite',
+            },
+            keyframes: {
+              fadeIn: {
+                '0%': { opacity: '0', transform: 'translateY(10px)' },
+                '100%': { opacity: '1', transform: 'translateY(0)' },
+              }
             }
           }
         }
@@ -37,22 +48,34 @@
     <style>
       body {
         font-family: 'Kanit', sans-serif;
-        background-color: #F8FAFC;
         color: #334155;
+        /* PatternCraft: Diagonal Lines (Subtle) */
+        background-color: #F8FAFC;
+        background-image: repeating-linear-gradient(45deg, rgba(203, 213, 225, 0.15) 0px, rgba(203, 213, 225, 0.15) 1px, transparent 1px, transparent 10px), repeating-linear-gradient(-45deg, rgba(203, 213, 225, 0.15) 0px, rgba(203, 213, 225, 0.15) 1px, transparent 1px, transparent 10px);
+        background-size: 20px 20px;
+        min-height: 100vh;
       }
+      
+      /* Smooth Scrolling */
+      html {
+        scroll-behavior: smooth;
+      }
+
       /* Clean Scrollbar */
       ::-webkit-scrollbar {
-        width: 6px;
+        width: 8px;
       }
       ::-webkit-scrollbar-track {
-        background: #f1f5f9; 
+        background: rgba(241, 245, 249, 0.8); 
       }
       ::-webkit-scrollbar-thumb {
         background: #cbd5e1; 
-        border-radius: 3px;
+        border-radius: 4px;
+        border: 2px solid transparent;
+        background-clip: content-box;
       }
       ::-webkit-scrollbar-thumb:hover {
-        background: #94a3b8; 
+        background-color: #94a3b8; 
       }
     </style>
   <script type="importmap">
@@ -67,8 +90,8 @@
 }
 </script>
 </head>
-  <body class="bg-slate-50 text-slate-800 overflow-x-hidden">
-    <div id="root"></div>
+  <body class="bg-slate-50/50 text-slate-800 overflow-x-hidden relative">
+    <div id="root" class="relative z-10"></div>
     <!-- Vite Entry Point -->
     <script type="module" src="/index.tsx"></script>
   </body>

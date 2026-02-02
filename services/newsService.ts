@@ -8,6 +8,17 @@ export const fetchNews = async (category: Category): Promise<NewsArticle[]> => {
   const cacheKey = category;
   const now = Date.now();
 
+  // Helper to get IDs from all OTHER cached categories to prevent duplicates
+  const getOtherCategoryIds = () => {
+    const ids = new Set<string>();
+    Object.keys(cache).forEach(key => {
+      if (key !== cacheKey) {
+        cache[key].data.forEach(article => ids.add(article.article_id));
+      }
+    });
+    return ids;
+  };
+
   if (cache[cacheKey] && (now - cache[cacheKey].timestamp < CACHE_DURATION)) {
     return cache[cacheKey].data;
   }
@@ -55,11 +66,16 @@ export const fetchNews = async (category: Category): Promise<NewsArticle[]> => {
     const data = await res.json();
     
     if (data.results) {
+      const existingIds = getOtherCategoryIds();
+      
+      // Filter out articles that are already in other categories
+      const uniqueResults = data.results.filter((article: NewsArticle) => !existingIds.has(article.article_id));
+      
       cache[cacheKey] = {
-        data: data.results,
+        data: uniqueResults,
         timestamp: now
       };
-      return data.results;
+      return uniqueResults;
     }
     return [];
   } catch (error) {

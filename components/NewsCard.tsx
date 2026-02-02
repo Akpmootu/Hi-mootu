@@ -9,6 +9,7 @@ interface Props {
 const NewsCard: React.FC<Props> = ({ article }) => {
   const [summary, setSummary] = useState<string | null>(article.aiSummary || null);
   const [loading, setLoading] = useState(false);
+  const [imgError, setImgError] = useState(false);
 
   const handleSummary = async () => {
     if (summary) return;
@@ -77,6 +78,8 @@ const NewsCard: React.FC<Props> = ({ article }) => {
   };
 
   const branding = getSourceConfig(article.source_id);
+  // Smart Icon Logic: API Icon -> Favicon Service -> FontAwesome Fallback
+  const sourceIconUrl = article.source_icon || (article.source_url ? `https://www.google.com/s2/favicons?domain=${article.source_url}&sz=32` : null);
 
   return (
     <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden hover:shadow-md transition-shadow">
@@ -95,9 +98,18 @@ const NewsCard: React.FC<Props> = ({ article }) => {
         {/* Content */}
         <div className="flex-1 p-5 flex flex-col">
            <div className="flex items-center justify-between mb-3">
-             {/* Styled Source Badge */}
-             <div className={`flex items-center gap-2 px-2.5 py-1 rounded-md border text-xs font-semibold shadow-sm ${branding.color}`}>
-               <i className={`fas ${branding.icon}`}></i>
+             {/* Source Badge with Logo Support */}
+             <div className={`flex items-center gap-2 px-2.5 py-1 rounded-md border text-xs font-semibold shadow-sm transition-all ${branding.color}`}>
+               {sourceIconUrl && !imgError ? (
+                 <img 
+                   src={sourceIconUrl} 
+                   alt="Source Icon" 
+                   className="w-4 h-4 rounded-full object-cover bg-white"
+                   onError={() => setImgError(true)}
+                 />
+               ) : (
+                 <i className={`fas ${branding.icon}`}></i>
+               )}
                <span>{branding.label}</span>
              </div>
              

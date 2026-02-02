@@ -37,6 +37,7 @@ const GoldDashboard: React.FC<Props> = ({ headlines, news }) => {
   const [goldData, setGoldData] = useState<GoldApiResponse | null>(null);
   const [loadingGold, setLoadingGold] = useState(true);
   const [goldError, setGoldError] = useState(false);
+  const [usingProxy, setUsingProxy] = useState(false);
   
   // Real-time Clock State
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -56,30 +57,58 @@ const GoldDashboard: React.FC<Props> = ({ headlines, news }) => {
     return () => clearInterval(timer);
   }, []);
 
-  // 2. Fetch Real Thai Gold Price (Source: api.chnwt.dev)
+  // 2. Fetch Real Thai Gold Price (Robust Multi-Source Strategy)
   const fetchThaiGoldPrice = async () => {
     // Silent update if data exists, loading spinner only on first load
     if (!goldData) setLoadingGold(true);
     setGoldError(false);
-    try {
-      // Add timestamp to force no-cache
-      const res = await fetch(`https://api.chnwt.dev/thai-gold-api/latest?t=${Date.now()}`);
-      
-      if (!res.ok) throw new Error(`API Connection Failed: ${res.status}`);
-      
-      const json: GoldApiResponse = await res.json();
-      
-      if (json.status === 'success' && json.response) {
-        setGoldData(json);
-      } else {
-        throw new Error('Invalid Data Structure');
+    
+    // Strategy: Priority on Proxies because Browser fetch enforces CORS
+    const strategies = [
+      { 
+        name: 'AllOrigins Proxy', 
+        url: 'https://api.allorigins.win/raw?url=' + encodeURIComponent('https://api.chnwt.dev/thai-gold-api/latest') 
+      },
+      { 
+        name: 'CorsProxy.io', 
+        url: 'https://corsproxy.io/?' + encodeURIComponent('https://api.chnwt.dev/thai-gold-api/latest') 
+      },
+      { 
+        name: 'Direct API', 
+        url: 'https://api.chnwt.dev/thai-gold-api/latest' 
       }
-    } catch (error) {
-      console.warn("Thai Gold API Error", error);
-      setGoldError(true);
-    } finally {
-      setLoadingGold(false);
+    ];
+
+    let success = false;
+
+    for (const strategy of strategies) {
+      try {
+        // Add cache busting
+        const fetchUrl = `${strategy.url}${strategy.url.includes('?') ? '&' : '?'}t=${Date.now()}`;
+        // console.log(`Fetching Gold Price via ${strategy.name}...`);
+        
+        const res = await fetch(fetchUrl);
+        if (!res.ok) continue; // Try next strategy
+        
+        const json: GoldApiResponse = await res.json();
+        
+        if (json.status === 'success' && json.response) {
+          setGoldData(json);
+          setUsingProxy(strategy.name !== 'Direct API');
+          success = true;
+          break; // Stop loop on success
+        }
+      } catch (error) {
+        console.warn(`Strategy ${strategy.name} failed:`, error);
+        // Continue to next strategy
+      }
     }
+
+    if (!success) {
+      setGoldError(true);
+    }
+    
+    setLoadingGold(false);
   };
 
   useEffect(() => {
@@ -224,32 +253,32 @@ const GoldDashboard: React.FC<Props> = ({ headlines, news }) => {
     <div className="space-y-8 animate-fade-in">
       
       {/* 1. AI Recommendation Card (Enhanced Details) */}
-      <div className="bg-white rounded-2xl shadow-soft border border-slate-100 p-6 relative overflow-hidden group hover:shadow-lg transition-shadow">
-        <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-br from-yellow-50 to-transparent rounded-bl-[100px] opacity-60 pointer-events-none"></div>
+      <div className="bg-white rounded-3xl shadow-soft border border-slate-100 p-6 relative overflow-hidden group hover:shadow-lg transition-all duration-300">
+        <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-br from-yellow-100/50 to-transparent rounded-bl-[100px] opacity-60 pointer-events-none"></div>
 
         {/* Header Section */}
-        <div className="flex items-center justify-between mb-6 relative z-10 border-b border-slate-100 pb-4">
+        <div className="flex flex-col md:flex-row md:items-center justify-between mb-6 relative z-10 border-b border-slate-100 pb-4 gap-4">
           <h2 className="text-xl font-bold text-slate-800 flex items-center gap-3">
-            <span className="bg-slate-800 text-white w-10 h-10 rounded-xl flex items-center justify-center shadow-md">
-              <i className="fas fa-robot text-lg"></i>
+            <span className="bg-gradient-to-br from-slate-800 to-slate-700 text-white w-12 h-12 rounded-2xl flex items-center justify-center shadow-lg transform group-hover:scale-110 transition-transform">
+              <i className="fas fa-robot text-xl"></i>
             </span>
             <div>
-              <div className="leading-none">Hi'Mootu AI Analysis</div>
-              <span className="text-[10px] font-normal text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full mt-1 inline-block">
-                วิเคราะห์เจาะลึกอ้างอิงราคา Real-time (96.5%)
+              <div className="leading-none text-lg">Hi'Mootu AI Analysis</div>
+              <span className="text-[10px] font-medium text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full mt-1 inline-flex items-center gap-1">
+                <i className="fas fa-bolt text-yellow-500"></i> วิเคราะห์สด (Live)
               </span>
             </div>
           </h2>
           {forecast && (
-            <div className={`px-4 py-2 rounded-xl border flex flex-col items-center min-w-[100px] ${
-              forecast.recommendation === 'BUY' ? 'bg-green-50 border-green-200 text-green-700' :
-              forecast.recommendation === 'SELL' ? 'bg-red-50 border-red-200 text-red-700' :
-              'bg-slate-50 border-slate-200 text-slate-600'
+            <div className={`px-5 py-3 rounded-2xl border flex flex-col items-center min-w-[120px] shadow-sm transform transition-transform hover:-translate-y-1 ${
+              forecast.recommendation === 'BUY' ? 'bg-gradient-to-br from-green-50 to-green-100 border-green-200 text-green-700' :
+              forecast.recommendation === 'SELL' ? 'bg-gradient-to-br from-red-50 to-red-100 border-red-200 text-red-700' :
+              'bg-gradient-to-br from-slate-50 to-slate-100 border-slate-200 text-slate-600'
             }`}>
-               <span className="text-[10px] font-bold uppercase tracking-wider opacity-70">คำแนะนำ</span>
-               <span className="text-2xl font-black">{forecast.recommendation}</span>
-               <div className="text-[10px] mt-1">
-                 มั่นใจ {forecast.confidence}%
+               <span className="text-[10px] font-bold uppercase tracking-wider opacity-70 mb-1">คำแนะนำ</span>
+               <span className="text-3xl font-black drop-shadow-sm">{forecast.recommendation}</span>
+               <div className="text-[10px] mt-1 bg-white/50 px-2 py-0.5 rounded-full">
+                 <i className="fas fa-chart-pie mr-1"></i> มั่นใจ {forecast.confidence}%
                </div>
             </div>
           )}
@@ -258,23 +287,26 @@ const GoldDashboard: React.FC<Props> = ({ headlines, news }) => {
         {forecast ? (
            <div className="relative z-10 grid grid-cols-1 md:grid-cols-12 gap-6">
               {/* Left Column: Analysis & Strategy (7 cols) */}
-              <div className="md:col-span-7 space-y-4">
+              <div className="md:col-span-7 space-y-5">
                   <div>
                     <h3 className="text-sm font-semibold text-slate-700 mb-2 flex items-center gap-2">
-                      <i className="fas fa-align-left text-accent-gold"></i> บทวิเคราะห์ล่าสุด
+                      <i className="fas fa-comment-dots text-accent-blue"></i> บทวิเคราะห์ล่าสุด
                     </h3>
-                    <div className="text-slate-600 text-sm leading-relaxed bg-slate-50 p-4 rounded-xl border border-slate-100 shadow-sm">
-                      {forecast.reason}
+                    <div className="text-slate-600 text-sm leading-relaxed bg-slate-50 p-4 rounded-2xl border border-slate-100 shadow-sm relative">
+                       <i className="fas fa-quote-left absolute top-3 left-3 text-slate-200 text-2xl"></i>
+                       <span className="relative z-10 pl-6 block">{forecast.reason}</span>
                     </div>
                   </div>
 
                   <div>
                     <h3 className="text-sm font-semibold text-slate-700 mb-2 flex items-center gap-2">
-                      <i className="fas fa-chess-knight text-blue-500"></i> กลยุทธ์การเทรด (Strategy)
+                      <i className="fas fa-chess text-purple-500"></i> กลยุทธ์การเทรด (Strategy)
                     </h3>
-                    <div className="bg-blue-50/50 p-3 rounded-lg border border-blue-100 text-sm text-blue-800 font-medium flex items-start gap-2">
-                       <i className="fas fa-info-circle mt-0.5"></i>
-                       {forecast.strategy || "รอสัญญาณที่ชัดเจนกว่านี้"}
+                    <div className="bg-gradient-to-r from-blue-50 to-indigo-50 p-4 rounded-xl border border-blue-100 text-sm text-blue-900 font-medium flex items-start gap-3 shadow-sm">
+                       <div className="bg-white w-8 h-8 rounded-full flex items-center justify-center text-blue-500 shrink-0 shadow-sm">
+                          <i className="fas fa-lightbulb"></i>
+                       </div>
+                       <span className="mt-1">{forecast.strategy || "รอสัญญาณที่ชัดเจนกว่านี้"}</span>
                     </div>
                   </div>
               </div>
@@ -282,14 +314,16 @@ const GoldDashboard: React.FC<Props> = ({ headlines, news }) => {
               {/* Right Column: Factors & Levels (5 cols) */}
               <div className="md:col-span-5 space-y-4">
                   {/* Key Factors */}
-                  <div className="bg-slate-50 rounded-xl p-4 border border-slate-100">
-                     <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">ปัจจัยขับเคลื่อนตลาด</h3>
-                     <ul className="space-y-2">
+                  <div className="bg-white rounded-xl p-4 border border-slate-100 shadow-sm">
+                     <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-2">
+                       <i className="fas fa-newspaper text-slate-400"></i> ปัจจัยขับเคลื่อน
+                     </h3>
+                     <ul className="space-y-3">
                         {forecast.factors && forecast.factors.length > 0 ? (
                           forecast.factors.map((factor, index) => (
-                            <li key={index} className="text-sm text-slate-700 flex items-start gap-2">
-                               <i className="fas fa-caret-right text-accent-gold mt-1"></i>
-                               <span>{factor}</span>
+                            <li key={index} className="text-sm text-slate-700 flex items-start gap-2.5">
+                               <i className="fas fa-check-circle text-green-500 mt-0.5 text-xs"></i>
+                               <span className="leading-snug">{factor}</span>
                             </li>
                           ))
                         ) : (
@@ -300,20 +334,28 @@ const GoldDashboard: React.FC<Props> = ({ headlines, news }) => {
 
                   {/* Support / Resistance Levels */}
                   <div className="grid grid-cols-2 gap-3">
-                     <div className="bg-red-50 p-3 rounded-lg border border-red-100 text-center">
-                        <div className="text-[10px] text-red-500 font-bold uppercase mb-1">แนวต้าน (Res)</div>
-                        <div className="font-mono font-bold text-slate-800 text-sm">{forecast.resistance || "-"}</div>
+                     <div className="bg-red-50 p-3 rounded-xl border border-red-100 text-center relative overflow-hidden group/item">
+                        <div className="absolute top-0 right-0 p-1 opacity-10 group-hover/item:opacity-20 transition-opacity"><i className="fas fa-arrow-trend-down text-3xl"></i></div>
+                        <div className="text-[10px] text-red-600 font-bold uppercase mb-1">แนวต้าน (Res)</div>
+                        <div className="font-mono font-bold text-slate-800 text-lg">{forecast.resistance || "-"}</div>
                      </div>
-                     <div className="bg-green-50 p-3 rounded-lg border border-green-100 text-center">
-                        <div className="text-[10px] text-green-500 font-bold uppercase mb-1">แนวรับ (Sup)</div>
-                        <div className="font-mono font-bold text-slate-800 text-sm">{forecast.support || "-"}</div>
+                     <div className="bg-green-50 p-3 rounded-xl border border-green-100 text-center relative overflow-hidden group/item">
+                         <div className="absolute top-0 right-0 p-1 opacity-10 group-hover/item:opacity-20 transition-opacity"><i className="fas fa-arrow-trend-up text-3xl"></i></div>
+                        <div className="text-[10px] text-green-600 font-bold uppercase mb-1">แนวรับ (Sup)</div>
+                        <div className="font-mono font-bold text-slate-800 text-lg">{forecast.support || "-"}</div>
                      </div>
                   </div>
 
                   {/* Targets */}
-                  <div className="flex items-center justify-between text-xs pt-2 border-t border-slate-100 text-slate-500">
-                     <span>🎯 เป้า Spot: <b>{forecast.targetPrice}</b></span>
-                     <span>🇹🇭 เป้าไทย: <b>{forecast.targetPriceTHB}</b></span>
+                  <div className="bg-slate-800 text-white rounded-xl p-3 flex flex-col gap-2 shadow-md">
+                     <div className="flex justify-between items-center text-xs border-b border-slate-600 pb-2">
+                        <span className="text-slate-300"><i className="fas fa-crosshairs text-yellow-400 mr-1"></i> เป้าหมาย Spot</span>
+                        <span className="font-mono font-bold">{forecast.targetPrice}</span>
+                     </div>
+                     <div className="flex justify-between items-center text-xs">
+                        <span className="text-slate-300"><i className="fas fa-flag text-red-400 mr-1"></i> เป้าทองไทย</span>
+                        <span className="font-mono font-bold text-yellow-400">{forecast.targetPriceTHB}</span>
+                     </div>
                   </div>
               </div>
            </div>
@@ -329,11 +371,11 @@ const GoldDashboard: React.FC<Props> = ({ headlines, news }) => {
       </div>
 
       {/* 2. Thai Gold Association Table (Source: chnwt.dev) */}
-      <div className="bg-white rounded-2xl shadow-soft overflow-hidden border border-slate-100 relative min-h-[200px]">
+      <div className="bg-white rounded-3xl shadow-soft overflow-hidden border border-slate-100 relative min-h-[200px]">
          {loadingGold && !goldData && (
             <div className="absolute inset-0 bg-white/90 z-20 flex items-center justify-center backdrop-blur-sm">
                <div className="flex flex-col items-center">
-                  <i className="fas fa-sync fa-spin text-2xl text-yellow-600 mb-2"></i>
+                  <i className="fas fa-sync fa-spin text-3xl text-yellow-600 mb-3"></i>
                   <span className="text-sm text-slate-500">เชื่อมต่อสมาคมค้าทองคำ...</span>
                </div>
             </div>
@@ -352,65 +394,72 @@ const GoldDashboard: React.FC<Props> = ({ headlines, news }) => {
          )}
 
          {/* Red Header Section */}
-         <div className="bg-gradient-to-r from-[#8B0000] to-[#A00000] text-[#FFD700] px-6 py-5 flex justify-between items-center relative">
+         <div className="bg-gradient-to-r from-[#8B0000] to-[#C00000] text-[#FFD700] px-6 py-5 flex justify-between items-center relative shadow-md">
             <div className="relative z-10">
               <h3 className="text-xl font-bold tracking-wide font-sans flex items-center gap-2">
-                 <i className="fas fa-building-columns"></i> สมาคมค้าทองคำ (96.5%)
+                 <i className="fas fa-building-columns bg-black/20 p-2 rounded-lg"></i> สมาคมค้าทองคำ (96.5%)
               </h3>
-              <p className="text-[11px] text-white/80 mt-1 font-light flex items-center gap-1">
-                 <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></span> Live Update
+              <p className="text-[11px] text-white/80 mt-1 font-light flex items-center gap-1 pl-1">
+                 <span className={`w-2 h-2 rounded-full ${usingProxy ? 'bg-yellow-400' : 'bg-green-400'} animate-pulse shadow-[0_0_8px_rgba(74,222,128,0.8)]`}></span> 
+                 {usingProxy ? 'Proxy Mode' : 'Live Update System'}
               </p>
             </div>
             
             {/* Real-time Clock Section */}
-            <div className="text-right relative z-10">
+            <div className="text-right relative z-10 hidden md:block">
               <div className="text-2xl font-bold leading-none tracking-tight">
                  {formattedDate}
               </div>
               <div className="text-xs font-medium text-white/90 mt-1 bg-black/20 px-2 py-0.5 rounded inline-block">
-                 อัปเดต: เวลา {formattedTime} น.
+                 <i className="far fa-clock mr-1"></i> เวลา {formattedTime} น.
               </div>
             </div>
          </div>
          
-         <div className="p-4 md:p-6 bg-white">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+         <div className="p-4 md:p-6 bg-white relative">
+            {/* Pattern Background for Table area */}
+            <div className="absolute inset-0 opacity-5 pointer-events-none" style={{backgroundImage: 'radial-gradient(#000 1px, transparent 1px)', backgroundSize: '20px 20px'}}></div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 relative z-10">
                {/* Gold Bar */}
-               <div className="bg-slate-50 p-5 rounded-xl border border-slate-100 relative overflow-hidden">
-                  <div className="absolute top-0 right-0 w-16 h-16 bg-gradient-to-bl from-yellow-500/10 to-transparent rounded-bl-full"></div>
-                  <div className="flex justify-between items-center mb-4 border-b border-slate-200 pb-3">
+               <div className="bg-white p-5 rounded-2xl border border-slate-100 relative overflow-hidden shadow-sm hover:shadow-md transition-shadow">
+                  <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-bl from-yellow-100 to-transparent rounded-bl-[80px] opacity-50"></div>
+                  <div className="flex justify-between items-center mb-5 border-b border-slate-100 pb-3">
                     <span className="font-bold text-slate-800 text-lg flex items-center gap-2">
-                        <i className="fas fa-bars text-yellow-600"></i> ทองคำแท่ง
+                        <span className="bg-yellow-100 text-yellow-700 w-8 h-8 rounded-full flex items-center justify-center text-sm"><i className="fas fa-bars"></i></span>
+                        ทองคำแท่ง
                     </span>
-                    <span className={`text-xs px-2 py-1 rounded font-bold shadow-sm ${getChangeColor(changeValue)}`}>
+                    <span className={`text-xs px-2.5 py-1 rounded-full font-bold shadow-sm flex items-center gap-1 ${getChangeColor(changeValue)}`}>
+                      <i className={`fas ${changeValue.includes('-') ? 'fa-caret-down' : changeValue === '0' ? 'fa-minus' : 'fa-caret-up'}`}></i>
                       {changeValue && !changeValue.includes('-') && changeValue !== '0' ? '+' : ''}{changeValue}
                     </span>
                   </div>
-                  <div className="flex justify-between items-end mb-2">
-                     <span className="text-slate-500 text-sm font-medium">รับซื้อ (บาท)</span>
+                  <div className="flex justify-between items-end mb-3">
+                     <span className="text-slate-500 text-sm font-medium flex items-center gap-1"><i className="fas fa-arrow-down text-green-500"></i> รับซื้อ</span>
                      <span className="text-2xl font-bold text-[#8B0000] tracking-tight">{formatPrice(goldBar?.buy)}</span>
                   </div>
                   <div className="flex justify-between items-end">
-                     <span className="text-slate-500 text-sm font-medium">ขายออก (บาท)</span>
+                     <span className="text-slate-500 text-sm font-medium flex items-center gap-1"><i className="fas fa-arrow-up text-red-500"></i> ขายออก</span>
                      <span className="text-3xl font-bold text-[#8B0000] tracking-tight">{formatPrice(goldBar?.sell)}</span>
                   </div>
                </div>
 
                {/* Ornament */}
-               <div className="bg-slate-50 p-5 rounded-xl border border-slate-100 relative overflow-hidden">
-                  <div className="absolute top-0 right-0 w-16 h-16 bg-gradient-to-bl from-red-500/5 to-transparent rounded-bl-full"></div>
-                  <div className="flex justify-between items-center mb-4 border-b border-slate-200 pb-3">
+               <div className="bg-white p-5 rounded-2xl border border-slate-100 relative overflow-hidden shadow-sm hover:shadow-md transition-shadow">
+                  <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-bl from-red-100 to-transparent rounded-bl-[80px] opacity-50"></div>
+                  <div className="flex justify-between items-center mb-5 border-b border-slate-100 pb-3">
                     <span className="font-bold text-slate-800 text-lg flex items-center gap-2">
-                        <i className="fas fa-ring text-yellow-600"></i> ทองรูปพรรณ
+                        <span className="bg-red-100 text-red-700 w-8 h-8 rounded-full flex items-center justify-center text-sm"><i className="fas fa-ring"></i></span>
+                        ทองรูปพรรณ
                     </span>
-                    <span className="text-[10px] text-slate-500 bg-white border border-slate-200 px-2 py-1 rounded-full">ฐานภาษี/ขายออก</span>
+                    <span className="text-[10px] text-slate-500 bg-slate-50 border border-slate-200 px-2 py-1 rounded-full">ฐานภาษี/ขายออก</span>
                   </div>
-                  <div className="flex justify-between items-end mb-2">
-                     <span className="text-slate-500 text-sm font-medium">รับซื้อ (บาท)</span>
+                  <div className="flex justify-between items-end mb-3">
+                     <span className="text-slate-500 text-sm font-medium flex items-center gap-1"><i className="fas fa-file-invoice text-slate-400"></i> ฐานภาษี</span>
                      <span className="text-2xl font-bold text-[#8B0000] tracking-tight">{formatPrice(goldJewelry?.buy)}</span>
                   </div>
                   <div className="flex justify-between items-end">
-                     <span className="text-slate-500 text-sm font-medium">ขายออก (บาท)</span>
+                     <span className="text-slate-500 text-sm font-medium flex items-center gap-1"><i className="fas fa-tag text-slate-400"></i> ขายออก</span>
                      <span className="text-3xl font-bold text-[#8B0000] tracking-tight">{formatPrice(goldJewelry?.sell)}</span>
                   </div>
                </div>
@@ -424,15 +473,15 @@ const GoldDashboard: React.FC<Props> = ({ headlines, news }) => {
            <h3 className="font-bold text-slate-800 flex items-center gap-2">
              <i className="fas fa-history text-slate-400"></i> ประวัติคำแนะนำ (Backtesting)
            </h3>
-           <span className="text-[10px] bg-white border border-slate-200 px-2 py-1 rounded text-slate-500">
-             ล่าสุด 50 รายการ
+           <span className="text-[10px] bg-white border border-slate-200 px-2 py-1 rounded text-slate-500 shadow-sm">
+             <i className="fas fa-list-ol mr-1"></i> ล่าสุด 50 รายการ
            </span>
          </div>
          <div className="overflow-x-auto">
            <table className="w-full text-sm text-left">
              <thead className="bg-slate-50 text-slate-500 font-medium">
                <tr>
-                 <th className="px-6 py-3">เวลา</th>
+                 <th className="px-6 py-3"><i className="far fa-clock mr-1"></i> เวลา</th>
                  <th className="px-6 py-3">ราคาตลาด</th>
                  <th className="px-6 py-3">คำแนะนำ</th>
                  <th className="px-6 py-3">เป้าหมาย (THB)</th>
@@ -450,19 +499,20 @@ const GoldDashboard: React.FC<Props> = ({ headlines, news }) => {
                        {formatPrice(item.priceAtTime?.toString())}
                      </td>
                      <td className="px-6 py-4">
-                       <span className={`px-2 py-1 rounded-md text-xs font-bold ${
+                       <span className={`px-2 py-1 rounded-md text-xs font-bold flex items-center gap-1 w-fit ${
                          item.recommendation === 'BUY' ? 'bg-green-100 text-green-700' :
                          item.recommendation === 'SELL' ? 'bg-red-100 text-red-700' :
                          'bg-slate-100 text-slate-600'
                        }`}>
+                         <i className={`fas ${item.recommendation === 'BUY' ? 'fa-arrow-up' : item.recommendation === 'SELL' ? 'fa-arrow-down' : 'fa-pause'}`}></i>
                          {item.recommendation}
                        </span>
                      </td>
-                     <td className="px-6 py-4 text-slate-500">
+                     <td className="px-6 py-4 text-slate-500 font-mono">
                        {item.targetPriceTHB || '-'}
                      </td>
-                     <td className="px-6 py-4 text-slate-500 truncate max-w-xs" title={item.reason}>
-                       {item.reason}
+                     <td className="px-6 py-4 text-slate-500 truncate max-w-xs flex items-center gap-2" title={item.reason}>
+                       <i className="fas fa-info-circle text-slate-300"></i> {item.reason}
                      </td>
                    </tr>
                  ))
@@ -479,14 +529,17 @@ const GoldDashboard: React.FC<Props> = ({ headlines, news }) => {
       </div>
 
       {/* 4. TradingView Chart */}
-      <div className="h-[500px] w-full bg-white rounded-2xl shadow-soft border border-slate-100 overflow-hidden relative">
+      <div className="h-[500px] w-full bg-white rounded-2xl shadow-soft border border-slate-100 overflow-hidden relative group">
+          <div className="absolute top-4 left-4 z-10 bg-white/80 backdrop-blur px-3 py-1 rounded text-xs font-bold text-slate-500 shadow-sm pointer-events-none">
+            <i className="fas fa-chart-candlestick mr-1"></i> XAUUSD Chart
+          </div>
           <div id={containerId} className="h-full w-full"></div>
       </div>
 
       {/* 5. Gold News Section */}
       <div className="pt-8 border-t border-slate-200">
          <div className="flex items-center gap-3 mb-6">
-            <div className="w-1.5 h-8 bg-yellow-500 rounded-full"></div>
+            <div className="w-1.5 h-8 bg-gradient-to-b from-yellow-400 to-yellow-600 rounded-full shadow-glow"></div>
             <h3 className="text-xl font-bold text-slate-800">
               ทันข่าวทองคำ & เศรษฐกิจโลก
             </h3>

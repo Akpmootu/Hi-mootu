@@ -9,6 +9,8 @@ export interface NewsArticle {
   pubDate: string;
   image_url?: string;
   source_id?: string;
+  source_url?: string;
+  source_icon?: string;
   aiSummary?: string;
 }
 
