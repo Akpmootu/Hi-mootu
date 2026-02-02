@@ -115,17 +115,29 @@ const Layout: React.FC<Props> = ({ activeCategory, onSelectCategory, children })
             </span>
             <span className="font-bold text-slate-700 text-lg">Hi'Mootu</span>
           </div>
-          <p className="text-slate-500 text-sm font-light mb-4">
-            พัฒนาโดย <span className="font-medium text-slate-700 bg-slate-100 px-2 py-0.5 rounded-md">IT SSJ Satun 2569</span> 
+          <p className="text-slate-500 text-sm font-light mb-5">
+            จัดทำโดย <span className="font-medium text-slate-700 bg-slate-100 px-3 py-1 rounded-full shadow-sm">Mootu Go To Rich</span> 
             <i className="fas fa-heart text-red-400 ml-1 animate-pulse"></i>
           </p>
-          <div className="flex justify-center gap-4 text-slate-400 mb-4">
-             <i className="fab fa-github hover:text-slate-800 transition-colors cursor-pointer text-xl"></i>
-             <i className="fab fa-facebook hover:text-blue-600 transition-colors cursor-pointer text-xl"></i>
-             <i className="fab fa-line hover:text-green-500 transition-colors cursor-pointer text-xl"></i>
+          <div className="flex justify-center flex-wrap gap-5 text-slate-400 mb-6">
+             <a href="https://www.facebook.com/Mootu00" target="_blank" rel="noopener noreferrer" className="hover:text-blue-600 hover:-translate-y-1 transition-all transform duration-200" aria-label="Facebook">
+                <i className="fab fa-facebook text-2xl"></i>
+             </a>
+             <a href="https://www.tiktok.com/@mootu.akp789" target="_blank" rel="noopener noreferrer" className="hover:text-black hover:-translate-y-1 transition-all transform duration-200" aria-label="TikTok">
+                <i className="fab fa-tiktok text-2xl"></i>
+             </a>
+             <a href="https://www.instagram.com/mootumootumootu/" target="_blank" rel="noopener noreferrer" className="hover:text-pink-600 hover:-translate-y-1 transition-all transform duration-200" aria-label="Instagram">
+                <i className="fab fa-instagram text-2xl"></i>
+             </a>
+             <a href="https://github.com/Akpmootu" target="_blank" rel="noopener noreferrer" className="hover:text-slate-800 hover:-translate-y-1 transition-all transform duration-200" aria-label="GitHub">
+                <i className="fab fa-github text-2xl"></i>
+             </a>
+             <a href="https://line.me/ti/p/~moozuzaboy" target="_blank" rel="noopener noreferrer" className="hover:text-green-500 hover:-translate-y-1 transition-all transform duration-200" aria-label="Line ID">
+                <i className="fab fa-line text-2xl"></i>
+             </a>
           </div>
-          <p className="text-[10px] text-slate-400">
-            *ข้อมูลเพื่อการศึกษาเท่านั้น การลงทุนมีความเสี่ยง โปรดใช้วิจารณญาณ
+          <p className="text-[10px] text-slate-400 opacity-70">
+            *ข้อมูลเพื่อการศึกษาเท่านั้น การลงทุนมีความเสี่ยง โปรดใช้วิจารณญาณ | &copy; {new Date().getFullYear()} Hi'Mootu
           </p>
         </div>
       </footer>
