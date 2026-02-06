@@ -28,17 +28,19 @@ export const fetchNews = async (category: Category): Promise<NewsArticle[]> => {
 
   switch (category) {
     case Category.GOLD:
-      q = 'ราคาทอง OR ทองคำ OR Gold Price OR XAUUSD OR เศรษฐกิจโลก';
+      q = 'ราคาทอง OR ทองคำ OR Gold Price OR XAUUSD OR เศรษฐกิจโลก OR สงครามการค้า';
       break;
     case Category.STOCKS:
       q = 'หุ้นสหรัฐ OR ตลาดหุ้น OR Nasdaq OR S&P500 OR หุ้นเทคโนโลยี';
       apiCategory = 'business'; 
       break;
     case Category.AI_NEWS:
-      q = 'ปัญญาประดิษฐ์ OR AI Technology OR ChatGPT OR Gemini AI OR Generative AI';
+      // Includes Global Tech keywords + Thai Tech Publishers
+      q = 'ปัญญาประดิษฐ์ OR AI Technology OR ChatGPT OR Gemini OR Generative AI OR NVIDIA OR Beartai OR Droidsans OR ExtremeIT OR iMoD OR Blognone OR TechOffside';
       apiCategory = 'technology';
       break;
     case Category.TECH:
+      q = 'Technology OR Innovation OR Cyber Security OR Gadget';
       apiCategory = 'technology';
       break;
     case Category.BUSINESS:

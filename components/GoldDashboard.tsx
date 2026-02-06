@@ -10,14 +10,6 @@ interface Props {
   news: NewsArticle[];
 }
 
-// New Interface for thaigold.info data structure
-interface ThaiGoldItem {
-  name: string;
-  bid: string | number;
-  ask: string | number;
-  diff: string | number;
-}
-
 // Normalized State for UI
 interface GoldDataState {
   bar: { buy: string; sell: string };
@@ -31,7 +23,7 @@ const GoldDashboard: React.FC<Props> = ({ headlines, news }) => {
   const [goldData, setGoldData] = useState<GoldDataState | null>(null);
   const [loadingGold, setLoadingGold] = useState(true);
   const [goldError, setGoldError] = useState(false);
-  const [usingProxy, setUsingProxy] = useState(false);
+  const [sourceName, setSourceName] = useState('');
   
   // Real-time Clock State
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -51,91 +43,100 @@ const GoldDashboard: React.FC<Props> = ({ headlines, news }) => {
     return () => clearInterval(timer);
   }, []);
 
-  // 2. Fetch Real Thai Gold Price (Updated Source: thaigold.info)
+  // 2. Scraping Thai Gold Price (Source: xn--42cah7d0cxcvbbb9x.com)
   const fetchThaiGoldPrice = async () => {
-    // Silent update if data exists, loading spinner only on first load
     if (!goldData) setLoadingGold(true);
     setGoldError(false);
     
-    // Target URL
-    const targetUrl = 'https://www.thaigold.info/RealTimeDataV2/gtdata_.json';
+    // Using AllOrigins as a CORS Proxy to scrape the site
+    const targetUrl = 'https://xn--42cah7d0cxcvbbb9x.com/';
+    const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}&t=${Date.now()}`;
 
-    // Strategy: Priority on Proxies because Browser fetch enforces CORS
-    const strategies = [
-      { 
-        name: 'CorsProxy.io', 
-        url: 'https://corsproxy.io/?' + encodeURIComponent(targetUrl) 
-      },
-      { 
-        name: 'AllOrigins Proxy', 
-        url: 'https://api.allorigins.win/raw?url=' + encodeURIComponent(targetUrl) 
-      },
-      { 
-        name: 'Direct API', 
-        url: targetUrl
+    try {
+      const response = await fetch(proxyUrl);
+      const data = await response.json();
+      
+      if (data.contents) {
+        const html = data.contents;
+        
+        // --- Web Scraping Logic with Regex ---
+        // The site structure puts numbers after specific keywords. 
+        // We look for patterns like: "ทองคำแท่ง...71,250...71,450"
+        
+        // Remove whitespace/newlines to make regex easier
+        const cleanHtml = html.replace(/\s+/g, ' ');
+
+        // Regex to find "ทองคำแท่ง 96.5%" then capture Buy/Sell prices
+        // Looking for digits with commas (e.g. 71,250)
+        const barRegex = /ทองคำแท่ง.*?รับซื้อ.*?([\d,]+).*?ขายออก.*?([\d,]+)/;
+        const jewelryRegex = /ทองรูปพรรณ.*?รับซื้อ.*?([\d,.]+).*?ขายออก.*?([\d,]+)/;
+        const changeRegex = /วันนี้.*?([-+]?[\d,]+)/;
+
+        const barMatch = cleanHtml.match(barRegex);
+        const jewelryMatch = cleanHtml.match(jewelryRegex);
+        const changeMatch = cleanHtml.match(changeRegex);
+
+        if (barMatch && jewelryMatch) {
+           setGoldData({
+             bar: {
+               buy: barMatch[1],
+               sell: barMatch[2]
+             },
+             jewelry: {
+               buy: jewelryMatch[1], // This might have decimals for tax base
+               sell: jewelryMatch[2]
+             },
+             change: changeMatch ? changeMatch[1] : '0',
+             updateTime: new Date()
+           });
+           setSourceName('ราคาทองคําวันนี้.com');
+           setLoadingGold(false);
+           return;
+        }
       }
-    ];
+      throw new Error("Scraping patterns did not match");
 
-    let success = false;
+    } catch (error) {
+      console.error("Scraping failed, trying fallback API...", error);
+      // Fallback: Try thaigold.info JSON if scraping fails
+      tryFallbackAPI();
+    }
+  };
 
-    for (const strategy of strategies) {
-      try {
-        // Add cache busting
-        const fetchUrl = `${strategy.url}${strategy.url.includes('?') ? '&' : '?'}t=${Date.now()}`;
-        
-        const res = await fetch(fetchUrl);
-        if (!res.ok) continue; // Try next strategy
-        
+  const tryFallbackAPI = async () => {
+    try {
+        const res = await fetch('https://corsproxy.io/?' + encodeURIComponent('https://www.thaigold.info/RealTimeDataV2/gtdata_.json'));
         const data = await res.json();
         
-        // Parse Logic for thaigold.info (Expected Array)
         if (Array.isArray(data)) {
-          let barItem = data.find((item: ThaiGoldItem) => item.name.includes('แท่ง'));
-          let jewelryItem = data.find((item: ThaiGoldItem) => item.name.includes('รูปพรรณ'));
-          
-          // Fallback mapping if names vary slightly
-          if (!barItem && data.length > 0) barItem = data[0]; 
-          if (!jewelryItem && data.length > 1) jewelryItem = data[1];
-
+          const barItem = data.find((item: any) => item.name.includes('สมาคม'));
           if (barItem) {
-            const newData: GoldDataState = {
-              bar: {
-                buy: barItem.bid.toString(),
-                sell: barItem.ask.toString()
-              },
-              jewelry: {
-                buy: jewelryItem ? jewelryItem.bid.toString() : '-',
-                sell: jewelryItem ? jewelryItem.ask.toString() : '-'
-              },
-              change: barItem.diff ? barItem.diff.toString() : '0',
-              updateTime: new Date()
-            };
-
-            setGoldData(newData);
-            setUsingProxy(strategy.name !== 'Direct API');
-            success = true;
-            break; // Stop loop on success
+             const barSell = parseFloat(barItem.ask.toString().replace(/,/g, ''));
+             setGoldData({
+               bar: { buy: barItem.bid.toString(), sell: barItem.ask.toString() },
+               jewelry: { buy: ((barSell * 0.981) - 200).toFixed(0), sell: (barSell + 500).toFixed(0) }, // Approx calc
+               change: barItem.diff.toString(),
+               updateTime: new Date()
+             });
+             setSourceName('Thaigold.info (สำรอง)');
+             setLoadingGold(false);
           }
+        } else {
+            setGoldError(true);
+            setLoadingGold(false);
         }
-      } catch (error) {
-        console.warn(`Strategy ${strategy.name} failed:`, error);
-        // Continue to next strategy
-      }
+    } catch (e) {
+        setGoldError(true);
+        setLoadingGold(false);
     }
-
-    if (!success) {
-      setGoldError(true);
-    }
-    
-    setLoadingGold(false);
-  };
+  }
 
   useEffect(() => {
     fetchThaiGoldPrice();
     setHistory(getHistory('GOLD'));
     
-    // Polling Price Every 30 Seconds (Faster Update)
-    const interval = setInterval(fetchThaiGoldPrice, 30000);
+    // Polling Price Every 60 Seconds (Scraping is heavy, don't spam)
+    const interval = setInterval(fetchThaiGoldPrice, 60000);
     return () => clearInterval(interval);
   }, []);
 
@@ -154,7 +155,6 @@ const GoldDashboard: React.FC<Props> = ({ headlines, news }) => {
       let currentForecast: MarketForecast | null = null;
       let shouldAnalyze = true;
 
-      // Logic: Analyze if cache expired (> 15 mins) OR if Price has changed significantly (optional logic, keeping time based for now)
       if (cached && lastTime && Date.now() - parseInt(lastTime) < 900000) {
         currentForecast = JSON.parse(cached);
         setForecast(currentForecast);
@@ -163,7 +163,6 @@ const GoldDashboard: React.FC<Props> = ({ headlines, news }) => {
 
       if (shouldAnalyze) {
         console.log(`Running New AI Analysis with Price: ${currentPriceStr}...`);
-        // Pass currentPriceStr to the AI service
         currentForecast = await analyzeMarket(headlines, 'GOLD', undefined, currentPriceStr);
         setForecast(currentForecast);
         localStorage.setItem('gold_forecast_mistral', JSON.stringify(currentForecast));
@@ -171,28 +170,22 @@ const GoldDashboard: React.FC<Props> = ({ headlines, news }) => {
       }
 
       // --- History & Telegram Logic ---
-      const currentPrice = currentPriceStr; // Use Sell Price of Gold Bar as reference
+      const currentPrice = currentPriceStr; 
 
       if (currentForecast && currentPrice) {
-        
-        // 1. Save History
         const updatedHistory = saveHistory('GOLD', currentForecast, currentPrice);
         setHistory(updatedHistory);
 
-        // 2. Check for Telegram Alert
         const ONE_HOUR = 60 * 60 * 1000;
         const lastSentStr = localStorage.getItem('gold_last_sent_forecast');
         const lastSentObj = lastSentStr ? JSON.parse(lastSentStr) : null;
-
         const isTimeToSend = !lastSentTime || (Date.now() - parseInt(lastSentTime) > ONE_HOUR);
         const isStateChanged = lastSentObj && lastSentObj.recommendation !== currentForecast.recommendation;
 
         if (isTimeToSend || isStateChanged) {
              const forecastSignature = `${currentForecast.timestamp}-${currentForecast.recommendation}`;
              if (lastNotifiedForecast.current !== forecastSignature) {
-                
                 await sendTelegramAlert(currentForecast, formatPrice(currentPrice));
-                
                 localStorage.setItem('gold_telegram_sent_time', Date.now().toString());
                 localStorage.setItem('gold_last_sent_forecast', JSON.stringify(currentForecast));
                 lastNotifiedForecast.current = forecastSignature;
@@ -204,7 +197,7 @@ const GoldDashboard: React.FC<Props> = ({ headlines, news }) => {
     if (goldData) {
       runAnalysis();
     }
-  }, [headlines, goldData]); // Runs when headlines OR goldData updates
+  }, [headlines, goldData]);
 
   // 4. TradingView Injection
   useEffect(() => {
@@ -240,11 +233,17 @@ const GoldDashboard: React.FC<Props> = ({ headlines, news }) => {
 
   // Formatters
   const formatPrice = (price: string | undefined) => {
-    if (!price) return "-";
-    // Ensure comma separation for display
+    if (!price || price === '0') return "-";
+    // If it already has commas, just return it
+    if (price.includes(',')) return price;
+    
     try {
-      const num = parseFloat(price.replace(/,/g, ''));
-      return isNaN(num) ? price : num.toLocaleString('th-TH');
+      const num = parseFloat(price);
+      if (isNaN(num)) return price;
+      if (Number.isInteger(num)) {
+         return num.toLocaleString('th-TH', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+      }
+      return num.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     } catch {
       return price;
     }
@@ -257,7 +256,6 @@ const GoldDashboard: React.FC<Props> = ({ headlines, news }) => {
     return 'bg-green-500 text-white';
   };
 
-  // Date Formatters for Header
   const formattedDate = currentTime.toLocaleDateString('th-TH', { 
     day: 'numeric', 
     month: 'long', 
@@ -271,11 +269,10 @@ const GoldDashboard: React.FC<Props> = ({ headlines, news }) => {
   return (
     <div className="space-y-8 animate-fade-in">
       
-      {/* 1. AI Recommendation Card (Enhanced Details) */}
+      {/* 1. AI Recommendation Card */}
       <div className="bg-white rounded-3xl shadow-soft border border-slate-100 p-6 relative overflow-hidden group hover:shadow-lg transition-all duration-300">
         <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-br from-yellow-100/50 to-transparent rounded-bl-[100px] opacity-60 pointer-events-none"></div>
 
-        {/* Header Section */}
         <div className="flex flex-col md:flex-row md:items-center justify-between mb-6 relative z-10 border-b border-slate-100 pb-4 gap-4">
           <h2 className="text-xl font-bold text-slate-800 flex items-center gap-3">
             <span className="bg-gradient-to-br from-slate-800 to-slate-700 text-white w-12 h-12 rounded-2xl flex items-center justify-center shadow-lg transform group-hover:scale-110 transition-transform">
@@ -305,7 +302,6 @@ const GoldDashboard: React.FC<Props> = ({ headlines, news }) => {
 
         {forecast ? (
            <div className="relative z-10 grid grid-cols-1 md:grid-cols-12 gap-6">
-              {/* Left Column: Analysis & Strategy (7 cols) */}
               <div className="md:col-span-7 space-y-5">
                   <div>
                     <h3 className="text-sm font-semibold text-slate-700 mb-2 flex items-center gap-2">
@@ -330,9 +326,7 @@ const GoldDashboard: React.FC<Props> = ({ headlines, news }) => {
                   </div>
               </div>
 
-              {/* Right Column: Factors & Levels (5 cols) */}
               <div className="md:col-span-5 space-y-4">
-                  {/* Key Factors */}
                   <div className="bg-white rounded-xl p-4 border border-slate-100 shadow-sm">
                      <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-2">
                        <i className="fas fa-newspaper text-slate-400"></i> ปัจจัยขับเคลื่อน
@@ -351,7 +345,6 @@ const GoldDashboard: React.FC<Props> = ({ headlines, news }) => {
                      </ul>
                   </div>
 
-                  {/* Support / Resistance Levels */}
                   <div className="grid grid-cols-2 gap-3">
                      <div className="bg-red-50 p-3 rounded-xl border border-red-100 text-center relative overflow-hidden group/item">
                         <div className="absolute top-0 right-0 p-1 opacity-10 group-hover/item:opacity-20 transition-opacity"><i className="fas fa-arrow-trend-down text-3xl"></i></div>
@@ -365,7 +358,6 @@ const GoldDashboard: React.FC<Props> = ({ headlines, news }) => {
                      </div>
                   </div>
 
-                  {/* Targets */}
                   <div className="bg-slate-800 text-white rounded-xl p-3 flex flex-col gap-2 shadow-md">
                      <div className="flex justify-between items-center text-xs border-b border-slate-600 pb-2">
                         <span className="text-slate-300"><i className="fas fa-crosshairs text-yellow-400 mr-1"></i> เป้าหมาย Spot</span>
@@ -389,13 +381,13 @@ const GoldDashboard: React.FC<Props> = ({ headlines, news }) => {
         )}
       </div>
 
-      {/* 2. Thai Gold Association Table (Source: thaigold.info) */}
+      {/* 2. Thai Gold Price Card (Web Scraping Version) */}
       <div className="bg-white rounded-3xl shadow-soft overflow-hidden border border-slate-100 relative min-h-[200px]">
          {loadingGold && !goldData && (
             <div className="absolute inset-0 bg-white/90 z-20 flex items-center justify-center backdrop-blur-sm">
                <div className="flex flex-col items-center">
                   <i className="fas fa-sync fa-spin text-3xl text-yellow-600 mb-3"></i>
-                  <span className="text-sm text-slate-500">เชื่อมต่อสมาคมค้าทองคำ...</span>
+                  <span className="text-sm text-slate-500">กำลังดึงราคาทองวันนี้...</span>
                </div>
             </div>
          )}
@@ -404,7 +396,7 @@ const GoldDashboard: React.FC<Props> = ({ headlines, news }) => {
             <div className="absolute inset-0 bg-white z-20 flex items-center justify-center">
                <div className="flex flex-col items-center text-center p-6">
                   <i className="fas fa-wifi text-2xl text-red-400 mb-2"></i>
-                  <span className="text-sm text-slate-600 mb-2">ระบบ Real-time ขัดข้องชั่วคราว</span>
+                  <span className="text-sm text-slate-600 mb-2">ไม่สามารถดึงราคาได้</span>
                   <button onClick={fetchThaiGoldPrice} className="text-xs bg-slate-100 hover:bg-slate-200 px-3 py-1 rounded-full transition-colors">
                      <i className="fas fa-redo mr-1"></i> เชื่อมต่อใหม่
                   </button>
@@ -412,19 +404,18 @@ const GoldDashboard: React.FC<Props> = ({ headlines, news }) => {
             </div>
          )}
 
-         {/* Red Header Section */}
+         {/* Red Header */}
          <div className="bg-gradient-to-r from-[#8B0000] to-[#C00000] text-[#FFD700] px-6 py-5 flex justify-between items-center relative shadow-md">
             <div className="relative z-10">
               <h3 className="text-xl font-bold tracking-wide font-sans flex items-center gap-2">
                  <i className="fas fa-building-columns bg-black/20 p-2 rounded-lg"></i> สมาคมค้าทองคำ (96.5%)
               </h3>
               <p className="text-[11px] text-white/80 mt-1 font-light flex items-center gap-1 pl-1">
-                 <span className={`w-2 h-2 rounded-full ${usingProxy ? 'bg-yellow-400' : 'bg-green-400'} animate-pulse shadow-[0_0_8px_rgba(74,222,128,0.8)]`}></span> 
-                 {usingProxy ? 'Proxy Mode' : 'Live Update System'}
+                 <span className={`w-2 h-2 rounded-full bg-green-400 animate-pulse shadow-[0_0_8px_rgba(74,222,128,0.8)]`}></span> 
+                 Live from {sourceName || 'Checking...'}
               </p>
             </div>
             
-            {/* Real-time Clock Section */}
             <div className="text-right relative z-10 hidden md:block">
               <div className="text-2xl font-bold leading-none tracking-tight">
                  {formattedDate}
@@ -436,7 +427,6 @@ const GoldDashboard: React.FC<Props> = ({ headlines, news }) => {
          </div>
          
          <div className="p-4 md:p-6 bg-white relative">
-            {/* Pattern Background for Table area */}
             <div className="absolute inset-0 opacity-5 pointer-events-none" style={{backgroundImage: 'radial-gradient(#000 1px, transparent 1px)', backgroundSize: '20px 20px'}}></div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 relative z-10">
